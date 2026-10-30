@@ -288,7 +288,7 @@ def llm_scanner(
             return a resultset directly.
         nonce: A code written on every marker in the rendered transcript
             (message headers such as ``[M2] USER (3f9a1c7e):``, tool calls,
-            tool errors, reasoning and prefill tags; see ``messages_as_str()``)
+            citations, tool errors, reasoning and prefill tags; see ``messages_as_str()``)
             and available to the template as ``{{ scout_nonce }}``. Make it
             with ``secrets.token_hex(4)`` when the scanner is built. Never
             write a literal nonce in code: an agent that can read the scanner
