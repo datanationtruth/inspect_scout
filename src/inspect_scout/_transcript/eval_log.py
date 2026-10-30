@@ -969,9 +969,29 @@ def transcript_from_eval_sample(
 ) -> Transcript:
     """Build a `Transcript` from a completed `EvalSample`.
 
-    Wraps `transcript_info_from_eval_sample` and attaches `messages` +
-    `events` + `timelines` (synthesizing a timeline from events when
-    none is stored).
+    Use this to scan or judge a sample you already have in memory (e.g. one
+    read with `read_eval_log()` or captured as an eval finishes) without
+    going back through `transcripts_from()`. The transcript carries the
+    sample's `messages`, `events` and `timelines` (a timeline is synthesized
+    from the events when none is stored).
+
+    Only the fields an `EvalSample` carries are filled: eval-level fields
+    such as `task_set`, `agent`, `agent_args`, `model_options`,
+    `total_tokens` and `limit` are `None`, whereas `transcripts_from()`
+    reads them from the eval log.
+
+    Args:
+        eval_sample: The sample to convert. Read it with
+            `resolve_attachments=True` if its content should not contain
+            `attachment://` references.
+        eval_id: Id of the eval the sample belongs to (`EvalLog.eval.eval_id`).
+        log_location: Location of the eval log, recorded as `source_uri`.
+        model: The eval's model, recorded on the transcript.
+        trust_content: The eval's `ViewerConfig.trust_content`, recorded
+            with the transcript.
+
+    Returns:
+        Transcript: The sample as a transcript.
     """
     from inspect_ai.event import timeline_build
 

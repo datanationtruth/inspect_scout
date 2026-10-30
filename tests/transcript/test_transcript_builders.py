@@ -13,9 +13,9 @@ from inspect_ai.event import ModelEvent
 from inspect_ai.log import EvalSample
 from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
 from inspect_ai.scorer import Score
+from inspect_scout import transcript_from_eval_sample
 from inspect_scout._transcript.eval_log import (
     EVAL_LOG_SOURCE_TYPE,
-    transcript_from_eval_sample,
     transcript_info_from_eval_sample,
 )
 from inspect_scout._transcript.types import TranscriptInfo
