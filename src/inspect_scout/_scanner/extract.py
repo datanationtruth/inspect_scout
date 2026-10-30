@@ -19,6 +19,8 @@ from inspect_ai.model import (
     ChatMessageAssistant,
     ChatMessageTool,
     Content,
+    ContentText,
+    UrlCitation,
 )
 from inspect_ai.util import warn_once
 from typing_extensions import Unpack
@@ -50,7 +52,7 @@ class MessageFormatOptions:
     """Exclude reasoning content (defaults to `False`)."""
 
     exclude_tool_usage: bool = False
-    """Exclude tool usage (defaults to `False`)"""
+    """Exclude tool usage, including the URL citations on text content (defaults to `False`)"""
 
 
 @dataclass(frozen=True)
@@ -140,8 +142,8 @@ async def messages_as_str(
           `"json"` returns a JSON string, `"list"` returns individual
           formatted strings as a list.
        nonce: If set, written on every marker in the output: message
-          headers (e.g. `USER (3f9a1c7e):`), `Tool Call`, `Tool Use` and
-          tool error lines, reasoning and prefill tags (e.g.
+          headers (e.g. `USER (3f9a1c7e):`), `Tool Call`, `Tool Use`,
+          `Citations` and tool error lines, reasoning and prefill tags (e.g.
           `<thinking 3f9a1c7e>`), and the start and end lines of a tool call
           argument that spans lines. A reader that knows the nonce can then
           tell real markers from text in a message that imitates one. Must
@@ -259,8 +261,8 @@ def message_numbering(
         label_for_id: When True, return a third function that maps real
             message IDs to their assigned labels (e.g. ``"M3"``).
         nonce: If set, written on every marker in the output: message
-            headers (e.g. ``[M2] USER (3f9a1c7e):``), ``Tool Call``, ``Tool Use`` and
-            tool error lines, reasoning and prefill tags (e.g.
+            headers (e.g. ``[M2] USER (3f9a1c7e):``), ``Tool Call``, ``Tool Use``,
+            ``Citations`` and tool error lines, reasoning and prefill tags (e.g.
             ``<thinking 3f9a1c7e>``), and the start and end lines of a tool call
             argument that spans lines. A reader that knows the nonce can then
             tell real markers from text in a message that imitates one. Must
@@ -327,8 +329,8 @@ def message_as_str(
         message: The `ChatMessage` to convert.
         preprocessor: Content filter for messages. Defaults to removing system messages.
         nonce: If set, written on every marker in the output: message
-            headers (e.g. ``USER (3f9a1c7e):``), ``Tool Call``, ``Tool Use`` and
-            tool error lines, reasoning and prefill tags (e.g.
+            headers (e.g. ``USER (3f9a1c7e):``), ``Tool Call``, ``Tool Use``,
+            ``Citations`` and tool error lines, reasoning and prefill tags (e.g.
             ``<thinking 3f9a1c7e>``), and the start and end lines of a tool call
             argument that spans lines. A reader that knows the nonce can then
             tell real markers from text in a message that imitates one. Must
@@ -347,14 +349,16 @@ def message_as_str(
     if preprocessor.exclude_system and message.role == "system":
         return None
 
+    mark = _marker_nonce(nonce)
     content = _better_content_text(
         message.content,
         preprocessor.exclude_tool_usage,
         preprocessor.exclude_reasoning,
         nonce,
     )
+    if not preprocessor.exclude_tool_usage:
+        content += _citations_text(message.content, mark)
 
-    mark = _marker_nonce(nonce)
     role_label = _role_label(message, upper_fallback=True) + mark
 
     if (
@@ -492,6 +496,33 @@ def _text_from_content(
             )
         case "image" | "audio" | "video" | "data" | "document":
             return f"<{content.type} />"
+
+
+def _citations_text(content: str | list[Content], mark: str) -> str:
+    """The URL citations on the message's text blocks, listed once after all of its content.
+
+    One line per URL (the first title seen wins). Listing them after the last
+    block means the next line is always a marker (a `Tool Call` or the next
+    message header), so text in the message cannot pass as another entry.
+    """
+    urls: dict[str, str | None] = {}
+    for block in content if isinstance(content, list) else []:
+        if isinstance(block, ContentText):
+            for citation in block.citations or []:
+                if isinstance(citation, UrlCitation):
+                    urls.setdefault(citation.url, citation.title)
+    if not urls:
+        return ""
+    sources = "\n".join(
+        f"- {_one_line(title)}: {_one_line(url)}" if title else f"- {_one_line(url)}"
+        for url, title in urls.items()
+    )
+    return f"\nCitations{mark}:\n{sources}"
+
+
+def _one_line(text: str) -> str:
+    """`text` with each run of whitespace (line breaks included) collapsed to one space."""
+    return " ".join(text.split())
 
 
 def _better_content_text(

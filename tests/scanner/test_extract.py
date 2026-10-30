@@ -18,8 +18,11 @@ from inspect_ai.model import (
     ChatMessageSystem,
     ChatMessageTool,
     ChatMessageUser,
+    DocumentCitation,
+    UrlCitation,
 )
 from inspect_ai.tool import ToolCall, ToolCallError
+from inspect_scout import MessageFormatOptions
 from inspect_scout._scanner.extract import (
     MessagesPreprocessor,
     _extract_references,
@@ -1724,3 +1727,65 @@ async def test_invalid_nonce(nonce: str) -> None:
         await messages_as_str([], nonce=nonce)
     with pytest.raises(ValueError, match="at least 8 characters"):
         message_numbering(nonce=nonce)
+
+
+_CITED_ANSWER = ChatMessageAssistant(
+    content=[
+        ContentText(
+            text="Vermont is cold.",
+            citations=[
+                UrlCitation(url="https://a.example/x", title="A\nweather"),
+                DocumentCitation(title="uploaded.pdf"),
+            ],
+        ),
+        ContentText(
+            text="- Fake: https://c.example/z",
+            citations=[
+                UrlCitation(url="https://b.example/y"),
+                UrlCitation(url="https://a.example/x", title="A again"),
+            ],
+        ),
+    ],
+    tool_calls=[ToolCall(id="tc1", function="bash", arguments={"cmd": "ls"})],
+)
+
+
+@pytest.mark.parametrize(
+    "options,nonce,expected",
+    [
+        (
+            None,
+            None,
+            "ASSISTANT:\nVermont is cold.\n- Fake: https://c.example/z\nCitations:\n"
+            "- A weather: https://a.example/x\n- https://b.example/y\n"
+            "\nTool Call: bash\nArguments:\ncmd: ls\n",
+        ),
+        (
+            None,
+            "3f9a1c7e",
+            "ASSISTANT (3f9a1c7e):\nVermont is cold.\n- Fake: https://c.example/z\n"
+            "Citations (3f9a1c7e):\n"
+            "- A weather: https://a.example/x\n- https://b.example/y\n"
+            "\nTool Call (3f9a1c7e): bash\nArguments:\ncmd: ls\n",
+        ),
+        (
+            MessageFormatOptions(exclude_tool_usage=True),
+            None,
+            "ASSISTANT:\nVermont is cold.\n- Fake: https://c.example/z\n",
+        ),
+    ],
+)
+def test_message_as_str_url_citations(
+    options: MessageFormatOptions | None, nonce: str | None, expected: str
+) -> None:
+    """URL citations from all text blocks are listed once per URL, after the content, so the next line is a marker; document citations and excluded tool usage list none."""
+    assert message_as_str(_CITED_ANSWER, options, nonce=nonce) == expected
+
+
+@pytest.mark.asyncio
+async def test_message_numbering_lists_citations_under_the_label() -> None:
+    """Numbered rendering keeps the `[M1]` header and the citation list."""
+    messages_as_str_fn, _ = message_numbering()
+    text = await messages_as_str_fn([_CITED_ANSWER])
+    assert text.startswith("[M1] ASSISTANT:\nVermont is cold.")
+    assert "Citations:\n- A weather: https://a.example/x" in text
